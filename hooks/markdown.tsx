@@ -91,7 +91,7 @@ export function renderMarkdown(src: string, t: Table, tone?: string): El {
       continue
     }
 
-    // > quote: plain prose keeps the │ bar; a quote with structure (list, heading,
+    // > quote: plain prose keeps the │ bar (and its line breaks); a quote with structure (list, heading,
     // blank line, code) is markdown again, drawn in a frame in the quote colour
     if (/^\s*>/.test(line)) {
       const q: string[] = []
@@ -101,7 +101,7 @@ export function renderMarkdown(src: string, t: Table, tone?: string): El {
         ? (
           <Box flexDirection="row">
             <Text color={MD.quote}>│ </Text>
-            <Text color={MD.quote}>{inline(q.map(l => l.trim()).join(' '), t, `q${i}`)}</Text>
+            <Text color={MD.quote}>{q.flatMap((l, n) => [...(n ? ['\n'] : []), ...inline(l.trim(), t, `q${i}-${n}`)])}</Text>
           </Box>
         )
         : (

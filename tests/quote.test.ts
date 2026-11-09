@@ -22,5 +22,25 @@ test('plain multi-line prose keeps the │ bar instead of a frame', async ($, on
   const json = JSON.stringify(tree)
   expect(json).toContain('│ ')
   expect(json).not.toContain('"round"')
-  expect(json).toContain('written across')
+  // each source line stays its own line, with a "\n" child between them
+  const [first, second] = json.split('"\\n"')
+  expect(first).toContain('"This is a longer note that was written"')
+  expect(second).toContain('"across two lines of plain prose."')
+  expect(json).not.toContain('written across')
+})
+
+test('a plain quote of short formatted lines keeps one line per item', async ($, on) => {
+  on('ui.render', { component: 'AssistantMessage' }, () => null as any)
+  const tree = await $.ui.render({
+    surface: 'terminal', component: 'AssistantMessage', requestId: 'm4',
+    props: { text: '> **Now**\n> **1 · first item** — small\n> why it matters.', isFirstOfReply: true },
+  } as any)
+  const json = JSON.stringify(tree)
+  expect(json).toContain('│ ')
+  expect(json).not.toContain('"round"')
+  expect(json).not.toContain('small why')
+  const [first, second, third] = json.split('"\\n"')
+  expect(first).toContain('"Now"')
+  expect(second).toContain('"1 · first item"')
+  expect(third).toContain('why it matters.')
 })
