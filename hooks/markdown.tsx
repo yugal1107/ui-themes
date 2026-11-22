@@ -13,7 +13,7 @@ export const MD: Record<'code' | 'bold' | 'heading' | 'link' | 'bullet' | 'quote
 }
 
 type El = any
-type Table = { Box: any; Text: any; Link: any; Code: any; Markdown: any }
+type Table = { Box: any; Text: any; Link: any; Code: any; Markdown: any; Image?: any }
 
 // `code`, **bold**, *italic* / _italic_, [text](url)
 const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(\*[^*\s][^*\n]*\*)|(\b_[^_\n]+_\b)/g
@@ -42,8 +42,12 @@ export function inline(s: string, t: Table, keyBase: string): El[] {
   return out
 }
 
+// Hooks for blocks the caller draws itself: `mermaid` gets a ```mermaid fence's body and
+// whether its closing fence has arrived yet (false while the reply is still streaming).
+export type MarkdownOptions = { mermaid?: (src: string, closed: boolean) => El }
+
 // tone: colour for plain text (paragraphs, list items); quotes pass MD.quote
-export function renderMarkdown(src: string, t: Table, tone?: string): El {
+export function renderMarkdown(src: string, t: Table, tone?: string, opts?: MarkdownOptions): El {
   const { Box, Text, Code, Markdown } = t
   const lines = src.replace(/\s+$/, '').split('\n')
   const blocks: El[] = []
@@ -63,8 +67,11 @@ export function renderMarkdown(src: string, t: Table, tone?: string): El {
       const body: string[] = []
       i++
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i] ?? '')) body.push(lines[i++] ?? '')
+      const closed = i < lines.length
       i++
-      push(<Code source={body.join('\n')} language={fence[1] || undefined} />)
+      push(fence[1] === 'mermaid' && opts?.mermaid
+        ? opts.mermaid(body.join('\n'), closed)
+        : <Code source={body.join('\n')} language={fence[1] || undefined} />)
       continue
     }
 
@@ -106,7 +113,7 @@ export function renderMarkdown(src: string, t: Table, tone?: string): El {
         )
         : (
           <Box borderStyle="round" borderColor={MD.quote} paddingX={1} flexDirection="column">
-            {renderMarkdown(q.join('\n'), t, MD.quote)}
+            {renderMarkdown(q.join('\n'), t, MD.quote, opts)}
           </Box>
         ))
       continue

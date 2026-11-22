@@ -4,5 +4,6 @@
   "description": "Switchable themes for Claude Code: padded prompt/reply boxes, coloured markdown and a matching status line. /theme to switch.",
   "author": { "name": "Yugal Burde" },
   "license": "MIT",
-  "keywords": ["theme", "ui", "statusline", "markdown"]
+  "keywords": ["theme", "ui", "statusline", "markdown"],
+  "network": { "hosts": ["registry.npmjs.org"] }
 }

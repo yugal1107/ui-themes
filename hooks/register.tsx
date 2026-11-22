@@ -1,6 +1,18 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import { MD, renderMarkdown } from './markdown'
+import { clearMermaidErrors, drawMermaid, mermaidConfig, parseMode, scheduleMermaid, type MermaidColors } from './mermaid'
+
+// Diagram colours from the active theme
+function mermaidColors(): MermaidColors {
+  return { bg: theme.reply.bg, fg: MD.bold, accent: MD.heading, line: MD.quote, muted: MD.quote, border: MD.heading }
+}
+
+// ~/.claude/ui-themes/mermaid holds `unicode`, `image` or `off`; absent is unicode
+async function loadMermaidSetting($: EngineInterface) {
+  const f = `${await themesDir($)}/mermaid`
+  mermaidConfig.mode = ((await $.fs.exists(f)) && parseMode(await $.fs.read(f))) || 'unicode'
+}
 
 // Themes live in ~/.claude/ui-themes/<name>.json and the active name in ~/.claude/ui-themes/active.
 // The built-in themes and the status line script are copied there on first start and never
@@ -128,6 +140,7 @@ export const register: Register = on => {
       await seed($)
       await load($)
     } catch {}
+    try { await loadMermaidSetting($) } catch {}
     try {
       if ((await statuslineUpdate($)) === 'available') {
         $.ui.toast(`ui-themes ${await pluginVersion($)} has a new status line script. Run /ui-theme statusline update to review and apply it.`)
@@ -137,7 +150,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'ui-theme',
       description: 'Switch the UI theme (message boxes, reply colours, status line)',
-      argumentHint: '[name | next | list | statusline [update]]',
+      argumentHint: '[name | next | list | statusline [update] | mermaid [unicode|image|off]]',
     })
     return next(e)
   })
@@ -154,9 +167,21 @@ export const register: Register = on => {
         return {}
       }
       if (want === 'list') {
-        return { text: `Theme: **${theme.name}**\n\n${list}\n\n\`/ui-theme\` to pick from a list, \`/ui-theme <name>\` to switch, \`/ui-theme next\` to cycle, \`/ui-theme statusline\` to set up the matching status line.\nAdd your own by copying a file in \`${d}\`.` }
+        return { text: `Theme: **${theme.name}**\n\n${list}\n\n\`/ui-theme\` to pick from a list, \`/ui-theme <name>\` to switch, \`/ui-theme next\` to cycle, \`/ui-theme statusline\` to set up the matching status line, \`/ui-theme mermaid unicode|image|off\` for Mermaid diagrams.\nAdd your own by copying a file in \`${d}\`.` }
       }
-      if (want === 'next') want = names[(names.indexOf(theme.name) + 1) % names.length] ?? theme.name
+      if (want === 'mermaid' || want.startsWith('mermaid ')) {
+        const arg = want.slice('mermaid'.length).trim()
+        if (arg) {
+          const mode = parseMode(arg)
+          if (!mode) return { text: `No Mermaid mode \`${arg}\`. Use \`unicode\`, \`image\` or \`off\`.` }
+          mermaidConfig.mode = mode
+          await $.fs.write(`${d}/mermaid`, mode + '\n')
+          clearMermaidErrors()
+          $.ui.invalidate('ui.render')
+        }
+        return { text: `Mermaid diagrams: **${mermaidConfig.mode}**.\n\n- \`unicode\`: box-drawing art in the theme colours, any terminal\n- \`image\`: pictures, in terminals with the kitty graphics protocol (Ghostty, kitty); inside a multiplexer Claude Code may need \`CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1\`\n- \`off\`: plain code blocks\n\n\`/ui-theme mermaid unicode|image|off\` to switch.` }
+      }
+      if (want === 'next') want =names[(names.indexOf(theme.name) + 1) % names.length] ?? theme.name
       if (want === 'statusline' || want === 'statusline update') {
         const installed = `${d}/statusline.sh`
         const state = await statuslineUpdate($)
@@ -228,14 +253,25 @@ export const register: Register = on => {
     )
   })
 
-  // Claude's replies: padded box in the theme's reply colour, markdown in theme colours
+  // Claude's replies: padded box in the theme's reply colour, markdown in theme colours,
+  // ```mermaid fences as Unicode art or images (`/ui-theme mermaid`)
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
     const t = $.ui.resolve(e)
     const { Box } = t
-    return (
+    const colors = mermaidColors()
+    const requests: Array<{ id: string; src: string }> = []
+    // room inside the box: its padding, and the transcript's indent around a reply
+    const available = (e.viewport?.columns ?? 80) - 6
+    const mode = mermaidConfig.mode
+    const mermaid = mode !== 'off'
+      ? (src: string, closed: boolean) => drawMermaid(t as any, src, closed, colors, available, requests, mode)
+      : undefined
+    const tree = (
       <Box backgroundColor={theme.reply.bg} paddingX={2} paddingY={1} marginTop={1}>
-        {renderMarkdown(e.props.text, t)}
+        {renderMarkdown(e.props.text, t, undefined, { mermaid })}
       </Box>
     )
+    if (requests.length) scheduleMermaid($, requests, colors, mode)
+    return tree
   })
 }
